@@ -68,7 +68,7 @@ def init_db():
                 timestamp TEXT NOT NULL
             )
         """)
-
+init_db()
 
 # --------------------------------------------------
 # EMAIL REPORT
