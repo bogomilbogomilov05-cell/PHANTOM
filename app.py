@@ -9,13 +9,14 @@ from flask import (
     session
 )
 import sqlite3
-import smtplib
 import os
 import secrets
+import json
+import urllib.request
+import urllib.error
 
 from pathlib import Path
 from datetime import datetime, timedelta
-from email.message import EmailMessage
 from dotenv import load_dotenv
 
 
@@ -33,22 +34,22 @@ DATABASE = BASE_DIR / "phantom.db"
 SECRET_KEY = os.getenv("FLASK_SECRET_KEY")
 ADMIN_PASSWORD = os.getenv("PHANTOM_ADMIN_PASSWORD")
 
-SENDER_EMAIL = os.getenv("PHANTOM_GMAIL")
-APP_PASSWORD = os.getenv("PHANTOM_GMAIL_APP_PASSWORD")
+BREVO_API_KEY = os.getenv("BREVO_API_KEY")
+BREVO_SENDER_EMAIL = os.getenv("BREVO_SENDER_EMAIL")
 RECIPIENT_EMAIL = os.getenv("PHANTOM_RECIPIENT")
 
 if not SECRET_KEY:
-    raise RuntimeError("Missing FLASK_SECRET_KEY in .env")
+    raise RuntimeError("Missing FLASK_SECRET_KEY")
 
 if not ADMIN_PASSWORD:
-    raise RuntimeError("Missing PHANTOM_ADMIN_PASSWORD in .env")
+    raise RuntimeError("Missing PHANTOM_ADMIN_PASSWORD")
 
 app.secret_key = SECRET_KEY
 
 app.config.update(
     SESSION_COOKIE_HTTPONLY=True,
     SESSION_COOKIE_SAMESITE="Lax",
-    SESSION_COOKIE_SECURE=False,  # Localhost development only
+    SESSION_COOKIE_SECURE=os.getenv("RENDER") is not None,
     PERMANENT_SESSION_LIFETIME=timedelta(minutes=30)
 )
 
@@ -68,28 +69,22 @@ def init_db():
                 timestamp TEXT NOT NULL
             )
         """)
-init_db()
+
 
 # --------------------------------------------------
-# EMAIL REPORT
+# EMAIL REPORT - BREVO API
 # --------------------------------------------------
 
 def send_email_report(event_id, username, test_code, action, timestamp):
 
-    if not SENDER_EMAIL or not APP_PASSWORD or not RECIPIENT_EMAIL:
-        print("EMAIL ERROR: Gmail configuration is missing.")
+    if not BREVO_API_KEY or not BREVO_SENDER_EMAIL or not RECIPIENT_EMAIL:
+        print("EMAIL ERROR: Brevo configuration is missing.")
         return False
 
-    message = EmailMessage()
+    text_content = f"""
+PHANTOM - SECURITY AWARENESS REPORT
 
-    message["Subject"] = f"Security Awareness Report - Event #{event_id}"
-    message["From"] = SENDER_EMAIL
-    message["To"] = RECIPIENT_EMAIL
-
-    message.set_content(f"""
-SECURITY AWARENESS REPORT
-
-A demonstration form submission has been recorded.
+A fictional demonstration submission was recorded.
 
 EVENT INFORMATION
 -----------------
@@ -103,22 +98,48 @@ DATABASE STATUS
 ---------------
 Successfully saved in SQLite.
 
-Use fictional demonstration data only.
+Fictional demonstration data only.
+"""
 
-""")
+    payload = {
+        "sender": {
+            "name": "PHANTOM Security Lab",
+            "email": BREVO_SENDER_EMAIL
+        },
+        "to": [
+            {"email": RECIPIENT_EMAIL}
+        ],
+        "subject": f"PHANTOM Security Report - Event #{event_id}",
+        "textContent": text_content
+    }
+
+    data = json.dumps(payload).encode("utf-8")
+
+    req = urllib.request.Request(
+        "https://api.brevo.com/v3/smtp/email",
+        data=data,
+        headers={
+            "accept": "application/json",
+            "api-key": BREVO_API_KEY,
+            "content-type": "application/json"
+        },
+        method="POST"
+    )
 
     try:
-        with smtplib.SMTP_SSL(
-            "smtp.gmail.com",
-            465,
-            timeout=20
-        ) as smtp:
+        with urllib.request.urlopen(req, timeout=20) as response:
+            result = json.loads(response.read().decode("utf-8"))
+            print(f"EMAIL SENT: Event #{event_id}")
+            print("BREVO MESSAGE ID:", result.get("messageId"))
+            return True
 
-            smtp.login(SENDER_EMAIL, APP_PASSWORD)
-            smtp.send_message(message)
-
-        print(f"EMAIL SENT: Event #{event_id}")
-        return True
+    except urllib.error.HTTPError as error:
+        print("BREVO HTTP ERROR:", error.code)
+        print(
+            "BREVO RESPONSE:",
+            error.read().decode("utf-8", errors="replace")
+        )
+        return False
 
     except Exception as error:
         print(f"EMAIL ERROR: {type(error).__name__}: {error}")
@@ -378,8 +399,6 @@ def record():
         "SENT" if email_sent else "NOT SENT"
     )
 
-    # The visitor sees only the confirmation page.
-    # No redirect to the admin dashboard.
     return render_template_string(SUCCESS_PAGE)
 
 
@@ -479,9 +498,11 @@ def add_security_headers(response):
 # START APPLICATION
 # --------------------------------------------------
 
-if __name__ == "__main__":
+# Initialize database also when started by Gunicorn on Render.
+init_db()
 
-    init_db()
+
+if __name__ == "__main__":
 
     app.run(
         host="127.0.0.1",
